@@ -1,0 +1,610 @@
+---
+output:
+  rmarkdown::github_document
+always_allow_html: true
+--- 
+Homework 8
+
+McKayla Hagerty 
+
+CS 625, Fall 2020 
+
+```{r setup, include=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+## EDA Process
+
+### First dataset: Importing and Initial exploration
+
+#The first dataset I found is a list of the Top 100 songs for each week from 8/2/1958 through the week of 12/28/2019. 
+
+#Original Source: https://data.world/kcmillersean/billboard-hot-100-1958-2017 (the orginial dataset was scraped using import.io)
+
+
+#Import Billboard data.
+billboard <- read.csv("https://query.data.world/s/j53mutis3fjnygz4fjctj576eljh32", header=TRUE, stringsAsFactors=FALSE)
+billboard$WeekID <- as.Date(billboard$WeekID , format = "%m/%d/%Y")
+
+names(billboard)
+#View(billboard)
+
+#From my first look at the data, I see a combined column called SongID which is a combination of the song name and performer name. I was curious about a potential ability to combine datasets and was excited to find this type of Song ID is widely used. 
+
+#Another initial finding is that weeks on chart values have a wide range, between 1 and 87.
+
+#This leads me to my first question: *What can be considered a hit song?*
+
+#We know all the songs in our dataset were popular because they made the top 100 songs. However, some songs may have made the charts only to be pushed out and never return. For example, I Miss You Baby by Millie Jackson made the charts for 4 nonconsecutive weeks with a peak position of #95. 
+
+#I'll take a look at a scatterplot of peak poition on the charts and weeks on the charts. 
+
+
+library(ggplot2)
+ggplot(billboard, aes(x=Weeks.on.Chart, y=Peak.Position)) + geom_point()
+
+
+#I realized two things about this chart: the peak position axis should be reversed because an artist wants to be at the top of the charts (1 or close to 1) and that each of these dots represents a week and position combination when I want to be looking at song success. 
+
+#I'll first determine the number of unique songs on the billboard list to use as a check for the next step.
+
+
+length(unique(billboard$SongID))
+
+
+#Looking at the billboard data, I see that in order to filter out only unique values in a helpful way, I need to keep only the row with the largest value of weeks on chart for each unique song. This should leave only one row for each song, the row of the last week they were on the charts which ensure the peak position of the lifetime of the song on the billboards is accurate. 
+
+
+library(dplyr)
+billboard_last_week_on_chart <- billboard %>% group_by(SongID) %>% top_n(1, Weeks.on.Chart)
+#View(billboard_last_week_on_chart)
+count(billboard_last_week_on_chart)
+
+
+#Now, I'll produce the same chart but with our filtered data and with the y axis order revered. 
+
+
+library(ggplot2)
+ggplot(billboard_last_week_on_chart, aes(x=Weeks.on.Chart, y=Peak.Position)) + geom_point(alpha=I(0.1))+  scale_y_continuous(trans = "reverse")
+
+
+#From this I can see that the vast majority of songs which did not climb above the 50th spot on the charts did not make it to the charts at all for more than about 20 weeks. However, the range of songs that  made it to a top 10 spot on the charts were on the charts for a total of between 1 and 87 weeks, a much larger range. 
+
+#* So what makes a song a hit song? * According to Wikipedia, a song is typically considered a hit when it makes the top 40 of the Billboard Hot 100 and stays there for at least a week.
+
+#For the sake of dealing with less data, I'll create a dataset filtered by the songs that fit that criteria. 
+
+
+library(dplyr)
+hitbillboard <- billboard %>% filter(Peak.Position <= 40 & Weeks.on.Chart > 1)
+
+
+
+length(unique(hitbillboard$SongID))
+
+
+#This reduces the dataset to 12851 unique songs. Should I chose to use it for anything moving forward, this dataset is smaller and more manageable without taking a random sample of songs. The ones left are by definition actual hits. 
+
+#This leads to my next question: *what is the typical route to the top of the billboard charts? Do songs land on the top of the charts from the start or do they climb there? Is it a slow climb or a slow one? What about decent?*
+
+#To investigate this, I'll use that dataset reduced to only the songs than made it to the top 40 and stayed on the charts for at least a week. With 12764 lines, this should be a crazy lineplot. I'll see if there are some general trends worth investigating before moving farther. 
+
+
+ggplot(hitbillboard, aes(x = Weeks.on.Chart, y = Week.Position, group = factor(SongID))) +
+  geom_line(alpha=.05) + scale_y_continuous(trans = "reverse")
+
+library(ggplot2)
+ggplot(hitbillboard, aes(x=Weeks.on.Chart, y=Peak.Position)) + geom_point(alpha=I(0.1))+  scale_y_continuous(trans = "reverse")
+
+
+#It appears that most hit songs make the top of the charts early and are followed by a sharp decine in popularity. I'm not quite understanding this line at position 50 were most hit songs don't drop below if they are on the charts for more than 25 weeks.  Next, I'll look into just the songs that make the top spot.  
+
+library(dplyr)
+top_hit_billboard <- billboard %>% filter(Peak.Position <= 1 & Weeks.on.Chart > 1)
+#View(hitbillboard)
+
+length(unique(top_hit_billboard$SongID))
+
+ggplot(top_hit_billboard, aes(x = Weeks.on.Chart, y = Week.Position, group = factor(SongID))) + geom_line(alpha=.05) + scale_y_continuous(trans = "reverse")
+
+#It is easier to see from this graph that most top songs start at or near the top but tend to fall quickly, at least quicker than I expected. However, we can see that there is a significant portion of songs that endured for 40 to 60+ weeks. Of course, we aren't able to compare this to songs that never made the top 100 list. To make this or a similar visualization effective, some sort of summary statistics would need to be implemented to significantly reduce the clutter. I'll move on for now and see if something more interesting emerges.  
+
+#During the process of looking into defining and understanding hit songs, I started to wonder about one hit wonders. *Is there anything different about one hit wonders in comparision to other top 100 songs?* Music journalist Wayne Jancik defines a one-hit wonder as "an act that has won a position on Billboard's national, pop, Top 40 just once."
+
+#I'll filter the billboard data to keep just one-hit-wonders.
+
+
+library(dplyr)
+ohw_billboard <- billboard_last_week_on_chart %>% group_by(Performer) %>% dplyr::filter(n() == 1) %>% ungroup()
+#View(ohw_billboard)
+
+
+#Looking at the data, I'm seeing variations in performers because of features. These obviously aren't being detected as the same performer. If I wanted to do a visualization for one hit wonders, I'd need to clean that data. I'll try graphing a barplot with the frequency of one hit wonder occurrences each week anyway to see if it's worth investigating. *Is there a period of time when one hit wonders were more prevalent? *
+
+library(MASS)
+hit.freq = table(ohw_billboard$WeekID)
+barplot(hit.freq)
+#View(hit.freq)
+
+#There is an odd spike of one hit wonders that made the top 40 in one month of 1965. Otherwise, there's not much interesting here. As one last look, I'll see if there is a difference between the lifetime of one hit wonders on the chart vs in comparison to all songs in our original dataset. If this shows something interesting, I could work on cleaning to better define one hit wonders and filter them out for the comparison group. 
+
+library(MASS)
+hist(ohw_billboard$Weeks.on.Chart, xlim = c(0,80), breaks=40)
+
+library(MASS)
+hist(billboard_last_week_on_chart$Weeks.on.Chart, xlim = c(0,80), breaks=60)
+
+#There could be something to investigate more here. The histograms are frequencies in bins so the comparison is by general distribution. This still isn't very interesting so I'll move on for now.  
+
+### Second Dataset: Importing and Initial exploration
+
+#The same source also has a features dataset which has a list of additional values for each track pulled from the Spotify Web API. 
+
+#Original Source: https://data.world/kcmillersean/billboard-hot-100-1958-2017 (the original dataset was pulled from Spotify Web API)
+
+
+library("httr")
+library("readxl")
+GET("https://query.data.world/s/5phlvfg3im7qyffzy66v4m2uvzmnr3", write_disk(tf <- tempfile(fileext = ".xlsx")))
+genres_first_look <- read_excel(tf)
+names(genres_first_look)
+
+
+
+#Since this data was pulled from Spotify's API through searching the Spotify SongID column values from the billboard dataset, I'll compare the unique values from the SongID column in both datasets.
+
+
+print('Unique Song IDs in billboard:')
+length(unique(billboard$SongID))
+
+print('Unique Song IDs in genres_first_look:')
+length(unique(genres_first_look$SongID))
+
+#While it appears there is not only data from the second set for about 100 songs, the fact that it isn't an exact match makes me question how the second extra data was collected. I'll search for SongIDs in the billboard data which is not included in the genres_first_look data.  
+
+require(dplyr) 
+head(anti_join(billboard,genres_first_look))
+
+#The number of Song IDs in billboard that are not represented in the additional features dataset
+count(anti_join(billboard,genres_first_look))
+
+#Unique Song IDs in billboard
+length(unique(billboard$SongID))
+
+#It appears 2056 songs of the original 28474 song dataset do not have values in the supplemental features dataset. That is close to 7%. I would prefer to work with data for all the songs as this would show a better representation and allow for percent of whole by week comparisons. I found a dataset that would likely be more effective.  Unfortunately, the complex steps of attaining that data for personal use is not within the scope of this assignment.  
+
+#I'll first take a look at the columns and data types.
+
+#str(genres_first_look)
+
+#I see a combination of mostly characters and numerical data. I'll first start with a correlation matrix for this new data to get a sense of how the variables may be correlated. Note that we are working with all song data from the second dataset which includes songs that are not of interest. At this point, I am just getting farmiliar with the data. 
+
+my_num_data <- genres_first_look[, sapply(genres_first_look, is.numeric)]
+mydata.cor = cor(my_num_data, use = "complete.obs")
+library(corrplot)
+corrplot(mydata.cor, method="circle")
+
+#Some things that jump out are a strong positive correlation between loudness and energy, not a surprise. Likewise, there is a strongly negative correlation between energy and acousticness. Again, this isn't a surprise, but may be interesting to consider in terms of the makeup of top 100 songs, potentially over time. 
+
+#As for the character data, the only one really of interest is the genre.
+
+#I'm intrigued by the genre as this could be interesting to see a change overtime. 
+
+print('Unique Genres in genres_first_look:')
+length(unique(genres_first_look$spotify_genre))
+
+head(genres_first_look$spotify_genre)
+
+#Unfortunately, the genre column has 3276 unique values. I decided it was worth investigating so I used OpenRefine to clean the data, focusing more on the main, most recognizable categories. As a starting point, I used the below aggregate genres provided by Kevin Schaich (https://github.com/kevinschaich/billboard)
+
+#Cleaned genre data.
+genres <- read.csv("C:/Users/13mck/Desktop/genres-final.csv")
+names(genres)
+head(genres)
+
+uGenres <- unique(genres$Genre)
+print('The total number of unique genres is: ')
+length(uGenres)
+
+#With the cleaning, I dropped the unique genres down to 215 which is better. I chose not to force songs into broader genres if putting them there would be a stretch. I anticipate only using the main, most recognizable categories like rock, pop, country, hip-hop/rnb, alternative/indie, and reggae. Based on initial samples, I expect about 20% missing values when I merge this with the billboard data. This wouldn't have been an issue if I had access to some complete song datasets that exist. Likewise, I was not expecting to have to do much cleaning so I'll consider the day I spend on that alone a solid enough effort for now. Should I choose to use the genre for my final visualization, I will return for additional cleaning.
+
+#Next, I'll merge the two datasets using the SongID column.
+
+### Merged Data
+
+#Removing duplicate SongID rows in the genre dataset to allow for merging. 
+genres <- genres[!duplicated(genres[c('SongID')]),] 
+
+merged<-merge(billboard, genres, by = "SongID",all.x=TRUE)
+merged$WeekID <- as.Date(merged$WeekID , format = "%m/%d/%Y")
+
+#267191 of the 320496 rows have data for the genre. As expected, we have data from the additional dataset for about 83% of the original billboard dataset.
+
+#I want to investigate the data types for our combined dataset. 
+
+#Before I look into the genres, I want to see if I can find any correlation between song position/popularity/weeks on chart and any of the other numerical values. I'll again filter the merged data to create a new dataframe with the row for each song with the largest weeks.on.chart value. 
+
+merged_last_week_on_chart<- merged %>% group_by(SongID) %>% top_n(1, Weeks.on.Chart)
+
+my_num_data_merged <- merged_last_week_on_chart[, sapply(merged_last_week_on_chart, is.numeric)]
+mydata.cor_merged = cor(my_num_data_merged, use = "complete.obs")
+library(corrplot)
+corrplot(mydata.cor_merged, method="circle")
+
+#I know any of the positional data is on a scale of 1 to 100 with 1 being the top spot so I have to keep that in mind when looking at the correlations. Some notable findings here include:
+
+#1. Weeks.on.Chart and Peak.Position have a fairly strong negative correlation. Given that the positions data is on a scale of 1 to 100 with 1 being best, this could be redone and more understandably be interpreted as a positive correlation. As a song is on the charts longer, it is more likely to reach a higher spot on the charts. This reaffirms what was discovered earlier. 
+
+#2. Peak.Position and Week.Position have a weak but present positive correlation. The Week.Position couldn't be higher than the Peak.Position for each song, but a scatter plot (below) shows a cluster of songs that made the top 25 in the charts and had their last appearance on the charts as a top 50 song. This in in addition to a cluster across all ranks of songs that had their last appearance in the bottom 10 songs of the chart.
+
+library(ggplot2)
+ggplot(merged_last_week_on_chart, aes(x=Peak.Position, y=Week.Position)) + geom_point(alpha=I(0.1))+scale_x_continuous(trans = "reverse")+scale_y_continuous(trans = "reverse")
+
+#3. Peak.Position and spotify_track_popularity have a slight negative correlation (again, this should be interpreted as a positive correlation). Since all my dataset made the top 100, I'll also use the correlation between spotify_track_popularity and the data from the additional dataset as hints for what makes a popular song. 
+
+library(ggplot2)
+ggplot(merged_last_week_on_chart, aes(x=Peak.Position, y=spotify_track_popularity)) + geom_point(alpha=I(0.1))+scale_x_continuous(trans = "reverse")
+
+#4. There isn't any notable correlation between Peak.Position and any of the features in the additional dataset. This isn't surprising considering our dataset has all top 100 songs. There is a chance there is a homogeneity to a majority of the songs that make the top 100 list. There could also be a difference between what makes a top song depending on the time period. 
+
+#I'll create some histograms to investigate the distribution of where all the top 100 songs from all the weeks combined fall in some categories of interest identified by the correlation plot: acousticness, loudness, dancability, valence, and speechiness. 
+
+
+#Top songs are more likely to be less acoustic, louder, and less speech filled (fewer words, more music). They tend to also be slightly easier to dance to and positive (valence). 
+
+#I'll compare these same traits of top 100 songs in 1959 and 2000 to see if this is worth investigating more.
+
+#Filtered for 1959 dates.
+merged1959 <- subset(merged, WeekID >= ("1959-01-01") & WeekID <= ("1959-12-31"))
+
+#Filtered for 2000 dates.
+merged2000 <- subset(merged, WeekID >= ("2000-01-01") & WeekID <= ("2000-12-31"))
+
+#I see a significant difference in the distributions here. Top 100 1959 songs are much more likely to be acoustic.
+
+#2000 top songs were more dancable in comparison to 1959 songs. I'm definely seeing something interesting here.
+
+#There is less of a difference in speechiness.
+
+#I could also graph the averages of each these traits overtime with a line chart. I'll scale the traits I plan to include from 0 to 1 so they can all be placed on a line chart together. Since I'm not sure how to handle the loudness since it is a combination of positive and negative numbers so I'll return to that trait later.
+
+#*How have traits of popular songs changed over time?*
+
+#Creating new column for year, month, and day. 
+library(tidyr)
+
+merged <- merged %>%
+  separate(WeekID, sep="-", into = c("year", "month", "day"))
+
+#New dataframe for mean for each year.
+library(dplyr)
+mean_data <- group_by(merged, year) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data <- as.data.frame(mean_data)
+
+
+ggplot(data = mean_data, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+
+#This is interesting. I can see how traits of what makes a top 100 song have changed over the years. This can especially be seen in the acousticness and valence. From previous findings, we would expect something interesting from the loudness as well. 
+
+#I also remember reading about radar charts and wonder if I could make an interactive radar chart with a slider to look into the traits for each year or decade. Or perhaps I could make one with an overlapping view with averages by decade. The problem with radar charts is that it is difficult to compare or get a sense of a specific measurement. However, if I layered them then comparing would be easier. Also, exact values are not the point of showing this data. The value is in the comparison between years or decades. 
+
+#The last trait I haven't spent much time on is the genre. I would like to see the change over time in what genres make the top 100 list. I'll first start with a stacked bar chart as use the years column rather than the WeekID column. *Has the popularity of different genres changed over time?*
+
+genrebyyear <- table(merged$year, merged$Genre) 
+genrebyyear <- as.data.frame(genrebyyear)
+names(genrebyyear)[names(genrebyyear) == "Var1"] <- "year"
+names(genrebyyear)[names(genrebyyear) == "Var2"] <- "Genre"
+names(genrebyyear)[names(genrebyyear) == "Freq"] <- "Count"
+
+# library
+library(ggplot2)
+topgenrebyyear <- genrebyyear %>% filter(Genre %in% c("rock", "pop","alternative/indie","electronic/dance","soul","hip-hop/rnb","country"))
+  
+
+# Stacked
+ggplot(topgenrebyyear, aes(fill=Genre, y=Count, x=year)) + 
+    geom_bar(position="stack", stat="identity")
+
+#I don't generally like stacked bar graphs because it is difficult to make comparisons between groups. However, I discovered streamgraphs which may be a better fit.
+
+#“Streamgraphs are a generalization of stacked area graphs where the baseline is free. By shifting the baseline, it is possible to minimize the change in slope (or wiggle) in individual series, thereby making it easier to perceive the thickness of any given layer across the data. Byron & Wattenberg describe several streamgraph algorithms in ‘Stacked Graphs—Geometry & Aesthetics3’”4
+
+#installing and loading streamgraph
+#install.packages("devtools")
+library(devtools)
+#install.packages("zoo")
+devtools::install_github("hrbrmstr/streamgraph")
+topgenrebyyear$year <- as.Date(topgenrebyyear$year, format="%Y")
+
+library(dplyr)
+library(streamgraph)
+
+#topgenrebyyear %>% 
+  #streamgraph(key="Genre", value="Count", date="year", interpolate="linear", sort=TRUE)%>%     #sg_fill_brewer("PuOr")%>%
+  #sg_fill_manual(c("black", "#ffa500", "blue", "white", "#00ff00", "red")) %>% 
+  #sg_axis_x(tick_interval=3, tick_units="year","%Y") 
+  #sg_legend(FALSE, "Genre: ")
+
+#Should I choose to move forward with this chart, I would like to add key genre labels and more appropriate colors. The axis labels would also need adjusted. As mentioned before, if I continue down this route for my final visualization, I will probably return to the cleaning to see if I can show more of a representation of the pre-1990 song genres. 
+
+#At this point, Professor Weigle suggested I consider also looking into how particular genres have changed over time. To see if there was something interesting to be discovered there, I will create three new datasets with just rock, pop, and country music and create a multiple line plot for each featuring the music characteristics as before. *How have popular songs in key genres changed over time?* 
+
+library(ggplot2)
+rockmusic <- merged %>% filter(Genre %in% c("rock"))
+
+#New dataframe for mean for each year for just rock music.
+library(dplyr)
+mean_data_rockmusic <- group_by(rockmusic, year) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_rockmusic <- as.data.frame(mean_data_rockmusic)
+
+class(mean_data_rockmusic)
+
+p1 <- ggplot(data = mean_data_rockmusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+
+#This is interesting. I can see how rock music has changed since 1958.
+
+library(ggplot2)
+popmusic <- merged %>% filter(Genre %in% c("pop"))
+
+#New dataframe for mean for each year for just pop music.
+library(dplyr)
+mean_data_popmusic <- group_by(popmusic, year) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_popmusic <- as.data.frame(mean_data_popmusic)
+
+class(mean_data_popmusic)
+
+p1 <- ggplot(data = mean_data_popmusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+
+library(ggplot2)
+countrymusic <- merged %>% filter(Genre %in% c("country"))
+
+#New dataframe for mean for each year for just country music.
+library(dplyr)
+mean_data_countrymusic <- group_by(countrymusic, year) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_countrymusic <- as.data.frame(mean_data_countrymusic)
+
+class(mean_data_countrymusic)
+
+p1 <- ggplot(data = mean_data_countrymusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+
+#There is certainly much to work with here. There are interesting changes in all three genres.
+
+```
+
+## Sketches
+
+```{r}
+p1 <- ggplot(data = mean_data_rockmusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+```
+
+```{r}
+p1 <- ggplot(data = mean_data_popmusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+```
+
+```{r}
+p1 <- ggplot(data = mean_data_countrymusic, aes(x = year,group = 1)) + 
+  geom_line(aes(y = danceability),color="blue") + 
+  geom_line(aes(y = energy),color="green") +
+  geom_line(aes(y = speechiness),color="purple") +
+  geom_line(aes(y = acousticness),color="red") +
+  geom_line(aes(y = liveness),color="orange") +
+  geom_line(aes(y = valence)) +
+  labs(y = "") # Delete or change y axis title if desired.
+p1+theme(axis.text.x = element_text(angle = 90,vjust = .5))
+```
+
+## Final Visualization
+
+```{r warning=FALSE}
+library(ggplot2)
+rockmusic <- merged %>% filter(merged$Genre %in% c("rock"))
+
+#New dataframe for mean for each year for just rock music.
+library(dplyr)
+rockmusic$Decade <- 10*as.integer(as.numeric(substring(as.character(rockmusic$year), 1,4)) / 10)
+mean_data_rockmusic <- group_by(rockmusic, Decade) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_rockmusic <- as.data.frame(mean_data_rockmusic)
+
+popmusic <- merged %>% filter(merged$Genre %in% c("pop"))
+
+#New dataframe for mean for each year for just pop music.
+library(dplyr)
+popmusic$Decade <- 10*as.integer(as.numeric(substring(as.character(popmusic$year), 1,4)) / 10)
+mean_data_popmusic <- group_by(popmusic, Decade) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_popmusic <- as.data.frame(mean_data_popmusic)
+
+countrymusic <- merged %>% filter(merged$Genre %in% c("country"))
+
+#New dataframe for mean for each year for just country music.
+countrymusic$Decade <- 10*as.integer(as.numeric(substring(as.character(countrymusic$year), 1,4)) / 10)
+mean_data_countrymusic <- group_by(countrymusic, Decade) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_countrymusic <- as.data.frame(mean_data_countrymusic)
+	
+hiphoprnbmusic <- merged %>% filter(merged$Genre %in% c("	
+hip-hop/rnb"))
+
+#New dataframe for mean for each year for just hiphop music.
+hiphoprnbmusic$Decade <- 10*as.integer(as.numeric(substring(as.character(hiphoprnbmusic$year), 1,4)) / 10)
+mean_data_hiphoprnbmusic <- group_by(countrymusic, Decade) %>%
+             summarise(danceability = mean(danceability, na.rm = TRUE),energy = mean(energy, na.rm = TRUE),speechiness = mean(speechiness, na.rm = TRUE),acousticness = mean(acousticness, na.rm = TRUE),liveness = mean(liveness, na.rm = TRUE),valence = mean(valence, na.rm = TRUE),loudness = mean(loudness, na.rm = TRUE))
+
+mean_data_hiphoprnbmusic <- as.data.frame(mean_data_hiphoprnbmusic)
+
+```
+
+```{r fig.width=14, fig.height=12}
+
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(grid)
+library(cowplot)
+library(gridExtra)
+
+g1 <- ggplot(data = mean_data_countrymusic, aes(x = Decade,group = 1)) + 
+  geom_line(size = 2.4,aes(y = danceability),color="light grey") + 
+  geom_line(size = 2.4,aes(y = valence), color="dark grey")+
+  geom_line(size = 4,aes(y = energy),color="mediumturquoise") +
+  geom_line(size = 4,aes(y = acousticness),color="tomato2") +
+  theme_bw() + 
+  ylim(0, .9)+
+  theme(legend.position = "none", axis.ticks = element_blank(), panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), 
+    axis.title.x = element_blank(),axis.text.y = element_blank(), axis.title.y = element_blank(), 
+    axis.text.x = element_text( margin = margin(t = -8), size = 20),  
+    plot.subtitle = element_text(face='bold.italic',size=20, margin = margin(b=0))) +
+  annotate("text", x=2005, y=.63, label= "danceability",color="light grey", fontface =1,size = 7) +
+  annotate("text", x=2005, y=.78, label= "energy",color="mediumturquoise", fontface =1,size = 7) +
+  annotate("text", x=2005, y=.15, label= "acousticness",color="tomato2", fontface =1,size = 7) +
+  annotate("text", x=2005, y=.47, label= "valence",color="dark grey", fontface =1,size = 7) +
+  labs(subtitle = 'Qualities of Top Country Songs') 
+
+g2 <- ggplot(data = mean_data_rockmusic, aes(x = Decade,group = 1)) + 
+  geom_line(size = 2.4,aes(y = danceability),color="light grey") + 
+  geom_line(size = 2.4,aes(y = valence), color="dark grey")+
+  geom_line(size = 4,aes(y = energy),color="mediumturquoise") +
+  geom_line(size = 4,aes(y = acousticness),color="tomato2") +
+  theme_bw() + 
+  ylim(0, .9)+
+  theme(legend.position = "none", axis.ticks = element_blank(), panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), 
+    axis.title.x = element_blank(),axis.text.y = element_blank(), axis.title.y = element_blank(), 
+    axis.text.x = element_text( margin = margin(t = -8), size = 20),  
+    plot.subtitle = element_text(face='bold.italic',size=20, margin = margin(b=0))) +
+  annotate("text", x=2005, y=.6, label= "danceability",color="light grey",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.83, label= "energy", color="mediumturquoise", fontface =1,size = 7) +
+  annotate("text", x=2005, y=.14, label= "acousticness",color="tomato2",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.45, label= "valence",color="dark grey",fontface =1,size = 7) +
+  labs( subtitle = 'Qualities of Top Rock Songs') 
+
+g3 <- ggplot(data = mean_data_popmusic, aes(x = Decade,group = 1)) + 
+  geom_line(size = 2.4,aes(y = danceability),color="light grey") + 
+  geom_line(size = 2.4,aes(y = valence), color="dark grey")+
+  geom_line(size = 4,aes(y = energy),color="mediumturquoise") +
+  geom_line(size = 4,aes(y = acousticness),color="tomato2") +
+  theme_bw() + 
+  ylim(0, .9)+
+  theme(legend.position = "none", axis.ticks = element_blank(), panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), 
+    axis.title.x = element_blank(),axis.text.y = element_blank(), axis.title.y = element_blank(), 
+    axis.text.x = element_text( margin = margin(t = -8), size = 20),  
+    plot.subtitle = element_text(face='bold.italic',size=20, margin = margin(b=0))) +
+  annotate("text", x=2005, y=.625, label= "danceability",color="light grey",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.75, label= "energy",color="mediumturquoise",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.22, label= "acousticness",color="tomato2",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.51, label= "valence",color="dark grey",fontface =1,size = 7) +
+  labs( subtitle = 'Qualities of Top Pop Songs') 
+
+g4 <- ggplot(data = mean_data_hiphoprnbmusic, aes(x = Decade,group = 1)) + 
+  geom_line(size = 2.4,aes(y = danceability),color="light grey") + 
+  geom_line(size = 2.4,aes(y = valence), color="dark grey")+
+  geom_line(size = 4,aes(y = energy),color="mediumturquoise") +
+  geom_line(size = 4,aes(y = acousticness),color="tomato2") +
+  theme_bw() + 
+  ylim(0, .9)+
+  theme(legend.position = "none", axis.ticks = element_blank(), panel.border = element_blank(), panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank(), 
+    axis.title.x = element_blank(),axis.text.y = element_blank(), axis.title.y = element_blank(), 
+    axis.text.x = element_text( margin = margin(t = -8), size = 20),  
+    plot.subtitle = element_text(face='bold.italic',size=20, margin = margin(b=0))) +
+  annotate("text", x=2005, y=.63, label= "danceability",color="light grey",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.78, label= "energy",color="mediumturquoise",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.15, label= "acousticness",color="tomato2",fontface =1,size = 7) +
+  annotate("text", x=2005, y=.48, label= "valence",color="dark grey",fontface =1,size = 7) +
+  labs( subtitle = 'Qualities of Top Hip-Hop/R&B Songs') 
+
+grid.arrange(g1, g2, g3, g4, ncol=2,
+     top = textGrob("Want to write a hit song? Maybe it's time to leave the acoustic guitar behind", x = 0,hjust = 0,gp=gpar(fontfamily="sans", fontsize=27,font=2,lineweight=1)), bottom= textGrob("Sources: Billboard Data: https://data.world/kcmillersean/billboard-hot-100-1958-2017",gp=gpar(fontface=3, fontsize=10),hjust=1,x=1))
+
+```
+
+## Explaination 
+
+### The User Takeaway 
+
+The users should take away the answer to the question that prompted the making on this visualization: how have popular songs in key genres changed over time? Across all four included genres, the energy has increased and the acousticness has decreased. Country songs still have more acousticness than other genres but have also seen a steady decline in this quality. Country and Hip-Hop songs have seen a big increase in energy since 1980. To a lesser extent, the valence, or happiness, of top songs has decreased while danceability has remained consistent. Currently, pop songs are the most danceable songs and rock songs are the saddest. My title tells a story without trying to explain all the interesting findings, quickly drawing the attention of users and enticing them to discover more.  
+
+### Visualization Principles and Design Decisions
+Choosing the best visualization type to visually present data is extremely important. I chose to use multiple line charts because my goal was to show the change in several variables over time. The x-axis has continuous date values and the y-axis is numeric, scaled values from 0 to 1. Creating the consistent scale from 0 to 1 for all qualities was an imperative step in creating a visualization that is not distorted or misleading. My first goal was to compare the trend between different musical features (energy, danceability, valence, and acousticness) which prompted the choice of a multiple line chart. By splitting the initial single line chart into four by grouping by genre, something more interesting emerged that made a more compelling case about how these trends can be seen across all major genres. The matrix layout of the graphs also encourages comparisons between genres. Once my initial matrix of multiple line graphs was created, I made many additional customization choices to enhance the user experience:
+
+* I reduced the number of song qualities included down to four of the most interesting ones. This allows for some additional insights and context without losing sight of the main intended takeaway. It’s better to keep visualizations simple with just enough detail to convey the message. 
+* I also chose to increase the thickness of the lines of interest that relate to the visualization title (acousticness and energy). Likewise, these most important line colors are brighter and correspond to the positive and negative slopes of each. You’ll also notice that these lines are brought to the front of the chart. These choices bring the attention to the intended most important song qualities.  
+* As for color choices, aquamarine and tomato orange were used rather than green and red to allow for easier identification for all, including colorblind users. 
+* Another change from the sketches to the final visualization is increased smoothness of the lines through averaging by decade rather than year. I decided more detail was not needed and would potentially be distracting.
+* I kept the horizontal grid lines but found the vertical ones and the dark axis lines to be overwhelming and unnecessary because the point of the visualization is to identify trends rather than look up specific dates. 
+* The key was removed and instead replaced by line labels. The proximity and matching color of these labels allows for identification without moving the eyes from each line chart to a key.
+* The title and subtitles are both bolded, but the subtitles are also italicized to visually offset them from the main title.
+
+## References:
+
+https://stackoverflow.com/questions/40663586/streamgraph-package-in-r-will-run-the-data-but-no-graph-will-be-shown
+https://www.quora.com/How-do-I-get-a-frequency-count-based-on-two-columns-variables-in-an-R-dataframe
+https://stackoverflow.com/questions/10758961/how-to-convert-a-table-to-a-data-frame
+https://www.datanovia.com/en/lessons/rename-data-frame-columns-in-r/
+https://www.datanovia.com/en/lessons/subset-data-frame-rows-in-r/
+https://rdrr.io/github/hrbrmstr/streamgraph/man/sg_axis_x.html
+https://www.r-graph-gallery.com/158-change-color-in-interactive-streamgraph.html
+https://stackoverflow.com/questions/3171426/compare-two-data-frames-to-find-the-rows-in-data-frame-1-that-are-not-present-in
+https://community.rstudio.com/t/converting-dates-year-month-day-to-3-separate-columns-year-month-day/8585/3
+https://stackoverflow.com/questions/35920408/creating-a-line-chart-in-r-for-the-average-value-of-groups
+https://stackoverflow.com/questions/30375600/how-to-plot-multiple-lines-for-each-column-of-a-data-matrix-against-one-column
+https://stackoverflow.com/questions/27082601/ggplot2-line-chart-gives-geom-path-each-group-consist-of-only-one-observation
+https://stackoverflow.com/questions/15215457/standardize-data-columns-in-r
+https://www.earthdatascience.org/courses/earth-analytics/time-series-data/summarize-time-series-by-month-in-r/ 
