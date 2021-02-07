@@ -23,7 +23,7 @@ View(billboard)
 ```
 
 ``` r
-library("httr")
+library("httr") 
 library("readxl")
 GET("https://query.data.world/s/5phlvfg3im7qyffzy66v4m2uvzmnr3", write_disk(tf <- tempfile(fileext = ".xlsx")))
 ```
